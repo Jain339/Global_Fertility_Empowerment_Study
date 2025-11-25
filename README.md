@@ -29,9 +29,7 @@ This research project examines how multiple dimensions of women’s empowerment:
 * Interactive visualizations of demographic change
 * Policy-relevant interpretation rooted in demographic and gender-equity scholarship
 
-The full analysis is available in the rendered interactive HTML report
-➡ **[STA313-A2.html](STA313-A2.html)**.
-
+The full analysis is available in the rendered interactive HTML report.
 ---
 
 ## **Research Motivation**
@@ -149,16 +147,17 @@ Our interactive bubble chart demonstrates:
 ## **Repository Structure**
 
 ```
-├── STA313-A2.Rmd                 # Full reproducible analysis
-├── STA313-A2.html                # Interactive HTML report
-├── EDA.Rmd                       # Exploratory analysis script
-├── style.css                     # Custom styling for HTML output
+├── Empowerment_Fertility.Rmd                 # Full reproducible analysis
+├── Empowerment_Fertility.html                # Interactive HTML report
+├── EDA.Rmd                                   # Exploratory analysis script
+├── EDA.html                                  # Exploratory analysis HTML
+├── style.css                                 # Custom styling for HTML output
 ├── final_empowerment_fertility_data.csv
 ├── WorldBankData.csv
 ├── wb_historical_panel_data.xlsx
 ├── SOWC_tables.xlsx
 ├── top30.csv
-└── README.md                     # Project documentation
+└── README.md                                 # Project documentation
 ```
 
 ---
