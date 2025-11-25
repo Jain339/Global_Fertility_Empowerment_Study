@@ -1,0 +1,537 @@
+---
+title: "Exploratory Data Analysis - Work in Progress"
+author: "Nikita Jain and Kelsang Tsomo"
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+---
+
+# Purpose
+This file contains exploratory visualizations and code experiments conducted during the analysis process. Not all visualizations here made it into the final report. This demonstrates our iterative approach to finding the most effective way to communicate our findings about the relationship between women's empowerment and fertility decline in high-income nations.
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+```{r}
+# import libraries 
+library(dplyr)
+library(readxl)
+library(tidyr)
+library(countrycode)
+library(ggplot2)
+library(scales)
+library(ggrepel)
+library(plotly)
+```
+
+---
+
+# Data Loading and Preparation
+```{r}
+# loading world bank data, getting the high income countries 
+wb_file_path <- "WorldBankData.csv"
+
+wb_data_raw <- read.csv(
+  wb_file_path, 
+  stringsAsFactors = FALSE,
+  check.names = FALSE
+)
+
+year_cols <- grep("\\[YR\\d{4}\\]", names(wb_data_raw), value = TRUE)
+years <- as.numeric(gsub(".*\\[YR(\\d{4})\\]", "\\1", year_cols))
+
+wb_data_long <- wb_data_raw %>% 
+  select(`Country Name`, `Country Code`, `Series Name`, `Series Code`, all_of(year_cols)) %>%
+  pivot_longer(
+    cols = all_of(year_cols), 
+    names_to = "year_col", 
+    values_to = "value"
+  ) %>%
+  mutate(
+    year = as.numeric(gsub(".*\\[YR(\\d{4})\\]", "\\1", year_col)),
+    value = as.numeric(value)
+  ) %>%
+  select(-year_col) %>%
+  filter(!is.na(value))
+
+wb_data <- wb_data_long %>%
+  select(-`Series Name`) %>%
+  pivot_wider(
+    names_from = `Series Code`,
+    values_from = value, 
+    id_cols = c(`Country Name`, `Country Code`, year)
+  ) %>%
+  rename (
+    country = `Country Name`,
+    iso3c = `Country Code`,
+    gni_per_capita = NY.GNP.PCAP.CD,
+    fertility_rate = SP.DYN.TFRT.IN, 
+    population_growth = SP.POP.GROW,
+    old_age_dependency = SP.POP.DPND.OL,
+    female_lfpr = SL.TLF.CACT.FE.ZS
+  )
+
+cat("World Bank data loaded successfully!\n")
+
+gni_threshold <- 13205
+
+high_income_countries <- wb_data %>%
+  filter(year == max(year), !is.na(gni_per_capita)) %>%
+  filter(gni_per_capita >= gni_threshold) %>%
+  filter(!country %in% c("High income", "Low income", "Middle income", 
+                      "Upper middle income", "Lower middle income",
+                      "OECD members", "World", "European Union",
+                      "East Asia & Pacific", "Europe & Central Asia",
+                      "Latin America & Caribbean", "Middle East & North Africa",
+                      "North America", "South Asia", "Sub-Saharan Africa")) %>%
+  select(country, iso3c, gni_per_capita) %>%
+  distinct()
+```
+```{r}
+# loading UNICEF data
+unicef_file_path <- "SOWC_tables.xlsx"
+
+demographics <- read_excel(
+  path = unicef_file_path, 
+  sheet = 1,
+  skip = 7,
+  n_max = 217,
+  col_names = c(
+    "country",
+    "population_2023_thousands_total", NA,
+    "population_2023_thousands_under18", NA,
+    "population_2023_thousands_under5", NA,
+    "annual_population_growth_rate_perc", NA,
+    "annual_population_growth_rate_perc_A", NA,
+    "annual_number_of_births_thousands_2023", NA,
+    "total_live_births_per_woman_2023", NA,
+    "life_expectancy_at_birth_1970", NA,
+    "life_expectancy_at_birth_2000", NA,
+    "life_expectancy_at_birth_2023", NA,
+    "dependency_ratio_total", NA,
+    "dependency_ratio_child", NA,
+    "dependency_ratio_old_age", NA,
+    "share_of_urban_population_perc_2023", NA,
+    "annual_growth_rate_of_urban_population_perc_2000-2020", NA,
+    "annual_growth_rate_of_urban_population_perc_2000-2020_A", NA,
+    "net_migration_rate_per_thousand_2023"
+  )
+) |>
+  select(-starts_with("...")) |>
+  filter(!is.na(country), country != "SUMMARY") |>
+  mutate(across(-country, as.numeric))
+
+women_empowered <- read_excel(
+  path = unicef_file_path,
+  sheet = 17,
+  skip = 7,
+  n_max = 217,
+  col_names = c(
+    "country", 
+    "SIGI_2023",
+    "legal_gender_equality_in_employment_201802022",
+    "maternity_leave_benefits_2024",
+    "paternity_leave_benefits_2024",
+    "attained_upper_secondary_education_perc_2014-2023_male", NA,
+    "attained_upper_secondary_education_perc_2014-2023_female", NA,
+    "labour_force_participation_rate_2019-2023_rural_male", NA,
+    "labour_force_participation_rate_2019-2023_urban_male", NA,
+    "labour_force_participation_rate_2019-2023_male", NA,
+    "labour_force_participation_rate_2019-2023_rural_female", NA,
+    "labour_force_participation_rate_2019-2023_urban_female", NA,
+    "labour_force_participation_rate_2019-2023_female", NA,
+    "unemployment_rate_2019-2023_rural_male", NA,
+    "unemployment_rate_2019-2023_urban_male", NA,
+    "unemployment_rate_2019-2023_male", NA,
+    "unemployment_rate_2019-2023_rural_female", NA,
+    "unemployment_rate_2019-2023_urban_female", NA,
+    "unemployment_rate_2019-2023_female", NA,
+    "mobile_phone_ownership_perc_2014-2023_male", NA,
+    "mobile_phone_ownership_perc_2014-2023_female", NA,
+    "financial_inclusion_perc_2014-2022_male", 
+    "financial_inclusion_perc_2014-2022_female", 
+    "time_use_perc_2014-2023_male", 
+    "time_use_perc_2014-2023_female"
+  )
+) |>
+  select(-starts_with("...")) |>
+  filter(!is.na(country), country != "SUMMARY") |>
+  mutate(
+    across(
+      -c(country, maternity_leave_benefits_2024, paternity_leave_benefits_2024), 
+      as.numeric
+    )
+  )
+
+social_protection <- read_excel(
+  path = unicef_file_path,
+  sheet = 13,
+  skip = 7,
+  n_max = 217,
+  col_names = c(
+    "country", 
+    "new_mothers_cash_benefit_perc_2015-2023",
+    "children_covered_by_social_protection_perc_2015-2023", NA,
+    "social_protection_benefits_perc_2015-2021_bottom40", 
+    "social_protection_benefits_perc_2015-2021_top20", 
+    "social_protection_benefits_perc_2015-2021_bottom20", 
+    "share_of_household_income_2015-2023_bottom40",
+    "share_of_household_income_2015-2023_top20",
+    "share_of_household_income_2015-2023_bottom20",
+    "gini_coefficient_2015-2023", 
+    "palma_index_2015-2023", 
+    "VMIR_2010-2019",
+    "GDP_per_capita_2015-2023",
+    "children_material_deprivation_2011-2019_1D", NA,
+    "children_material_deprivation_2011-2019_2D", NA,
+    "children_material_deprivation_2011-2019_3D", NA,
+    "children_material_deprivation_2011-2019_more"
+  )
+) |>
+  select(-starts_with("...")) |>
+  filter(!is.na(country), country != "SUMMARY") |>
+  mutate(across(-country, as.numeric))
+
+unicef_combined <- demographics %>%
+  select(country, 
+         total_live_births_per_woman_2023, 
+         dependency_ratio_old_age,
+         life_expectancy_at_birth_2023) %>%
+  left_join (
+    women_empowered %>% 
+      select(country, 
+             SIGI_2023, 
+             maternity_leave_benefits_2024, 
+             paternity_leave_benefits_2024, 
+            `attained_upper_secondary_education_perc_2014-2023_female`, 
+            `labour_force_participation_rate_2019-2023_female`, 
+            `financial_inclusion_perc_2014-2022_female`, 
+            `time_use_perc_2014-2023_female`),
+    by = "country"
+  ) %>%
+  left_join(
+    social_protection %>%
+      select(country,
+            `new_mothers_cash_benefit_perc_2015-2023`), 
+    by = "country"
+  )
+
+unicef_combined <- unicef_combined %>%
+  mutate(
+    iso3c = countrycode(
+      country, 
+      origin = "country.name", 
+      destination = "iso3c", 
+      warn = FALSE
+    )
+  )
+
+unicef_high_income <- unicef_combined %>%
+  inner_join(
+    high_income_countries %>% select(iso3c),
+    by = "iso3c"
+  )
+
+wb_high_income <- wb_data %>%
+  inner_join(
+    high_income_countries %>% select(iso3c),
+    by = "iso3c"
+  ) %>% 
+  filter(year >= 2015 & year <= 2023) 
+
+years_available <- sort(unique(wb_high_income$year))
+
+unicef_panel <- expand.grid(
+  iso3c = unique(unicef_high_income$iso3c), 
+  year = years_available, 
+  stringsAsFactors = FALSE
+) %>%
+  left_join(
+    unicef_high_income, 
+    by = "iso3c"
+  )
+
+final_dataset <- wb_high_income %>%
+  inner_join(
+    unicef_panel,
+    by = c("iso3c", "year"),
+    suffix = c("_wb", "_unicef")
+  ) %>%
+  mutate(country = dplyr::coalesce(country_unicef, country_wb)) %>%
+  select(-country_wb, -country_unicef) %>%
+  mutate(
+    has_maternity_leave = !is.na(maternity_leave_benefits_2024) &
+      !grepl("No|None|^-$", maternity_leave_benefits_2024, ignore.case = TRUE),
+    has_paternity_leave = !is.na(paternity_leave_benefits_2024) & 
+      !grepl("No|None|^-$", paternity_leave_benefits_2024, ignore.case = TRUE),
+    education_female = `attained_upper_secondary_education_perc_2014-2023_female`,
+    labour_part_female = `labour_force_participation_rate_2019-2023_female`,
+    financial_inclusion_female = `financial_inclusion_perc_2014-2022_female`,
+    unpaid_work_share_female = `time_use_perc_2014-2023_female`
+  ) %>%
+  select(-total_live_births_per_woman_2023, -dependency_ratio_old_age) %>%
+  arrange(country, year) %>%
+  select(country, year, everything())
+
+final_dataset_30 <- final_dataset %>%
+  filter(year == 2023, !is.na(gni_per_capita)) %>%
+  filter(!country %in% c("Turks and Caicos Islands", "Andorra")) %>%
+  arrange(desc(gni_per_capita)) %>%
+  slice(1:30) %>%
+  select(country) %>%
+  left_join(final_dataset, by = "country") %>%
+  mutate(
+    country = case_when(
+      country == "Republic of Korea" ~ "South Korea",
+      country == "United States" ~ "U.S.",
+      country == "United Arab Emirates" ~ "UAE",
+      country == "Hong Kong SAR, China" ~ "Hong Kong",
+      country == "Macao SAR, China" ~ "Macao",
+      country == "Slovak Republic" ~ "Slovakia",
+      TRUE ~ country
+    )
+  )
+
+top_30_richest <- unique(final_dataset_30$country)
+cat("Top 30 countries loaded\n")
+```
+
+---
+
+# Visualization Experiments
+
+## Attempt 1: Faceted Country-by-Country Analysis (Kelsang)
+
+**Approach:** Show all 30 countries in separate panels with dual y-axes to compare fertility and aging trends.
+
+**Why we tried this:** Wanted to see individual country patterns in detail and show the correlation between fertility decline and aging.
+
+**Why it didn't work:** Too overwhelming with 30 small panels. Hard to compare across countries or identify overall patterns. Readers would need to examine each panel individually rather than seeing the big picture.
+
+**Decision:** Moved toward aggregated visualizations and scatterplots instead.
+```{r aging-plot, fig.width=14, fig.height=22}
+top30 <- final_dataset_30 |>
+  filter(!is.na(gni_per_capita)) |>
+  group_by(country) |>
+  summarise(gni_last = last(gni_per_capita[order(year)]), .groups = "drop") |>
+  arrange(desc(gni_last)) |>
+  slice_head(n = 30)
+
+plot_df <- final_dataset_30 |>
+  inner_join(top30, by = "country") |>
+  filter(!is.na(old_age_dependency), !is.na(fertility_rate), !is.na(year)) %>%
+  mutate(
+    income_category = case_when(
+      gni_per_capita >= 70000 ~ "Highest Income",
+      gni_per_capita >= 50000 ~ "High Income",
+      gni_per_capita >= 30000 ~ "Upper-Middle Income",
+      TRUE ~ "Middle Income"
+    ),
+    income_category = factor(
+      income_category,
+      levels = c("Highest Income", "High Income", 
+                 "Upper-Middle Income", "Middle Income")
+    )
+  )
+
+p <- ggplot(plot_df, aes(x = year)) +
+  geom_line(aes(y = old_age_dependency, color = "Old-age dependency"), 
+            linewidth = 0.8, alpha = 0.9) +
+  geom_line(aes(y = fertility_rate * 10, color = "Fertility rate (×10)"), 
+            linewidth = 0.8, linetype = "dashed", alpha = 0.9) +
+  facet_wrap(~ country, ncol = 3, scales = "free_y") +
+  scale_color_manual(
+    values = c("Old-age dependency" = "#1e3a8a", 
+               "Fertility rate (×10)" = "#a78bfa"),
+    name = NULL
+  ) +
+  scale_x_continuous(
+    breaks = seq(2015, 2023, 2),
+    labels = number_format(accuracy = 1)
+  ) +
+  scale_y_continuous(
+    labels = number_format(accuracy = 1)
+  ) +
+  labs(
+    title = "The Demographic Divergence: Aging Accelerates as Fertility Declines",
+    subtitle = "Top 30 countries by GNI per capita (2015–2023)",
+    x = "Year",
+    y = "Ratio / Rate (fertility scaled ×10 for comparison)",
+    caption = "Note: Fertility rate multiplied by 10 for visual comparison\nSource: World Bank & UNICEF"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    legend.position = "bottom",
+    strip.text = element_text(face = "bold", size = 9),
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(face = "bold", size = 14, hjust = 0.5),
+    plot.subtitle = element_text(size = 11, color = "gray30", hjust = 0.5)
+  )
+
+print(p)
+```
+
+---
+
+## Attempt 2: Pattern-Based Categorization (Kelsang)
+
+**Approach:** Group countries into subjective categories like "Rapid Aging," "Sharp Decline," and "Stable Fertility" based on their demographic profiles.
+
+**Why we tried this:** Wanted to highlight countries with similar trajectories and tell stories about different demographic patterns.
+
+**Why it didn't work:** Categories felt arbitrary and subjective. Hard to justify why Japan is "Rapid Aging" but Singapore is "Sharp Decline" when both have severe problems. Didn't align with our main argument about income-driven patterns.
+
+**Decision:** Switched to objective World Bank income classifications instead, which are standardized and widely recognized.
+```{r}
+plot_df <- plot_df %>%
+  mutate(
+    pattern_type = case_when(
+      country %in% c("Japan", "South Korea", "Italy", "Spain", "Greece") ~ "Rapid Aging",
+      country %in% c("United States", "France", "New Zealand", "Iceland") ~ "Stable Fertility",
+      country %in% c("Singapore", "Macao", "Hong Kong") ~ "Sharp Decline",
+      TRUE ~ "Other High-Income"
+    ),
+    pattern_type = factor(pattern_type, 
+                         levels = c("Rapid Aging", "Sharp Decline", 
+                                   "Stable Fertility", "Other High-Income"))
+  )
+
+p2 <- ggplot(plot_df, aes(x = year, group = country)) +
+  geom_line(data = filter(plot_df, pattern_type == "Other High-Income"),
+            aes(y = old_age_dependency), 
+            alpha = 0.2, color = "gray60", linewidth = 0.4) +
+  geom_line(data = filter(plot_df, pattern_type == "Other High-Income"),
+            aes(y = fertility_rate * 10), 
+            alpha = 0.2, color = "gray40", linewidth = 0.4, linetype = "dashed") +
+  geom_line(data = filter(plot_df, pattern_type != "Other High-Income"),
+            aes(y = old_age_dependency, color = pattern_type), 
+            linewidth = 1, alpha = 0.8) +
+  geom_line(data = filter(plot_df, pattern_type != "Other High-Income"),
+            aes(y = fertility_rate * 10, color = pattern_type), 
+            linewidth = 1, alpha = 0.8, linetype = "dashed") +
+  facet_wrap(~ pattern_type, ncol = 2) +
+  scale_color_manual(
+    values = c("Rapid Aging" = "#dc2626", 
+               "Sharp Decline" = "#ea580c",
+               "Stable Fertility" = "#16a34a",
+               "Other High-Income" = "gray50"),
+    name = "Pattern Group"
+  ) +
+  scale_x_continuous(breaks = seq(2015, 2023, 2)) +
+  labs(
+    title = "Diverging Demographic Futures in the World's Richest Nations",
+    subtitle = "Distinct aging and fertility patterns among top 30 economies (2015-2023)",
+    x = "Year",
+    y = "Old-age dependency ratio / Fertility rate (×10)",
+    caption = "Solid: Old-age dependency | Dashed: Fertility (×10)\nSource: World Bank & UNICEF"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5),
+    plot.subtitle = element_text(size = 12, color = "gray30", hjust = 0.5, margin = margin(b = 15)),
+    strip.text = element_text(face = "bold", size = 11),
+    legend.position = "none"
+  )
+
+print(p2)
+```
+
+---
+
+## Attempt 3: Simple Multi-Line Chart (Nikita)
+
+**Approach:** Plot all 30 countries as separate colored lines on one chart to show fertility trends.
+
+**Why we tried this:** Wanted a single comprehensive view where you could see all trends at once and compare countries directly.
+
+**Why it didn't work:** Way too cluttered! With 30 overlapping lines in different colors, it was impossible to distinguish individual countries. The legend became massive and unreadable. You couldn't actually see any patterns.
+
+**Decision:** Aggregate countries by income groups to show clearer macro-patterns. This became our first visualization in the final report showing High Income vs Low Income fertility trends.
+```{r}
+line_data <- final_dataset %>%
+  filter(country %in% top_30_richest, 
+         !is.na(fertility_rate))
+
+ggplot(line_data, aes(x = year, y = fertility_rate, color = country, group = country)) +
+  geom_line(size = 1.1, alpha = 0.9) +
+  geom_point(size = 2.5) +
+  scale_x_continuous(breaks = seq(2015, 2023, 1)) +
+  labs(
+    title = "Fertility Rate Trends Across Top 30 Richest Countries", 
+    x = "Year", 
+    y = "Fertility Rate (births per woman)",
+    color = "Country", 
+    caption = "Source: World Bank, UNICEF"
+  ) +
+  theme_minimal(base_size = 12) + 
+  theme(
+    plot.title = element_text(face = "bold", size = 16, margin = margin(b = 5)),
+    plot.subtitle = element_text(size = 11, color = "gray30", margin = margin(b = 15)),
+    plot.caption = element_text(hjust = 0, size = 8, color = "gray50"),
+    legend.position = "right",
+    legend.title = element_text(face = "bold"),
+    panel.grid.minor = element_blank(),
+    axis.title = element_text(face = "bold")
+  )
+```
+
+---
+
+## Attempt 4: Bubble Chart Experiment (Nikita)
+
+**Approach:** Create a bubble chart with GNI on x-axis, fertility on y-axis, and bubble size showing population.
+
+**Why we tried this:** Wanted to show three variables at once in an engaging visual format popular in data journalism.
+
+**Why it didn't work:** Hard to see temporal trends since it was just one snapshot. Bubble sizes were distracting and didn't add much insight. Static image didn't let users explore the data.
+
+**Decision:** Moved to scatterplots with trajectory lines showing change over time, which better illustrated the relationship between empowerment and fertility decline.
+```{r}
+bubble_data <- final_dataset_30 %>%
+  filter(year == 2023, !is.na(gni_per_capita), !is.na(fertility_rate))
+
+ggplot(bubble_data, aes(x = gni_per_capita, y = fertility_rate)) +
+  geom_point(aes(size = population_growth), alpha = 0.6, color = "#1e3a8a") +
+  geom_text_repel(aes(label = country), size = 3, max.overlaps = 15) +
+  scale_x_continuous(labels = comma) +
+  scale_size_continuous(range = c(3, 15)) +
+  labs(
+    title = "Wealth vs. Fertility in 2023",
+    x = "GNI per Capita (USD)",
+    y = "Fertility Rate (births per woman)",
+    size = "Pop. Growth",
+    caption = "Source: World Bank"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    legend.position = "bottom"
+  )
+```
+
+---
+
+# Summary of Exploration Process
+
+## What Worked:
+- **Income-based grouping** (World Bank classifications) provided clear, objective narrative structure
+- **Interactive plotly charts** allowed deeper exploration without overwhelming static views  
+- **Scatterplots with trajectory lines** effectively showed relationships between empowerment and fertility over time
+- **Heatmaps** made policy comparisons across 30 countries visually intuitive and scannable
+- **Faceting by empowerment dimension** (education, labor, finance, unpaid work) revealed nuanced patterns
+
+## What Didn't Work:
+- **Country-by-country facets** were too detailed; cognitive overload with 30 panels
+- **Pattern-based categorization** felt arbitrary and couldn't be defended rigorously
+- **Multi-line charts with 30+ countries** became spaghetti plots - completely unreadable
+- **Dual y-axes** made comparisons confusing rather than clarifying
+- **Bubble charts** looked nice but didn't communicate temporal change effectively
+- **Static plots for complex data** - needed interactivity for user engagement
+
+## Key Insights That Shaped Final Report:
+1. **Income matters most**: High-income countries show consistent fertility decline regardless of cultural/geographic differences
+2. **Empowerment is multidimensional**: Education shows weak link to fertility, but economic participation and unpaid work show strong negative relationships
+3. **Policy gaps are real**: Even among equally wealthy nations, maternal support varies from zero (U.S.) to comprehensive (Nordics)
+4. **Aging crisis is universal**: Every country with declining fertility faces rapid aging - it's mathematical inevitability
+5. **Data limitations matter**: Unpaid care work is poorly measured even in rich countries, which itself reflects gender inequality
+

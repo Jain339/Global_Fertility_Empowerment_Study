@@ -1,0 +1,1121 @@
+---
+title: 'Empowered, Yet Shrinking: How Women’s Economic Gains Are Rewriting the Demographics
+  of Prosperity '
+author: 'Authors: Nikita Jain and Kelsang Tsomo'
+date: 'Date: `r Sys.Date()`'
+output:
+  html_document:
+    theme: flatly
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+    code_folding: hide
+    css: style.css
+  pdf_document:
+    toc: true
+---
+````{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, fig.align = "centre")
+
+````
+
+
+```{r}
+# install packages
+# install.packages("countrycode")
+# install.packages("plotly")
+
+# loading the libraries we need
+library(dplyr)
+library(readxl)
+library(tidyr)
+library(countrycode)
+library(ggplot2)
+library(ggrepel)
+library(scales)
+library(plotly)
+library(crosstalk)
+library(grid)
+library(htmltools)
+```
+
+```{r}
+# load world bank data and find high income countries 
+wb_file_path <- "WorldBankData.csv"
+
+wb_data_raw <- read.csv(
+  wb_file_path, 
+  stringsAsFactors = FALSE,
+  check.names = FALSE  # keep original column names
+)
+
+# data has years as columns, need to find them
+year_cols <- grep("\\[YR\\d{4}\\]", names(wb_data_raw), value = TRUE)
+years <- as.numeric(gsub(".*\\[YR(\\d{4})\\]", "\\1", year_cols))
+
+# switch from wide to long format (easier to work with)
+wb_data_long <- wb_data_raw %>% 
+  select(`Country Name`, `Country Code`, `Series Name`, `Series Code`, all_of(year_cols)) %>%
+  pivot_longer(
+    cols = all_of(year_cols), 
+    names_to = "year_col", 
+    values_to = "value"
+  ) %>%
+  mutate(
+    year = as.numeric(gsub(".*\\[YR(\\d{4})\\]", "\\1", year_col)),
+    value = as.numeric(value)
+  ) %>%
+  select(-year_col) %>%
+  filter(!is.na(value))
+
+# make each indicator its own column
+wb_data <- wb_data_long %>%
+  select(-`Series Name`) %>%
+  pivot_wider(
+    names_from = `Series Code`,
+    values_from = value, 
+    id_cols = c(`Country Name`, `Country Code`, year)
+  ) %>%
+  rename(
+    country = `Country Name`,
+    iso3c = `Country Code`,
+    gni_per_capita = NY.GNP.PCAP.CD,
+    fertility_rate = SP.DYN.TFRT.IN, 
+    population_growth = SP.POP.GROW,
+    old_age_dependency = SP.POP.DPND.OL,
+    female_lfpr = SL.TLF.CACT.FE.ZS
+  )
+
+# world bank uses this threshold to classify high income
+gni_threshold <- 13205
+
+# get countries above threshold in 2023
+high_income_countries <- wb_data %>%
+  filter(year == max(year), !is.na(gni_per_capita)) %>%
+  filter(gni_per_capita >= gni_threshold) %>%
+  # skip regional aggregates
+  filter(!country %in% c("High income", "Low income", "Middle income", 
+                      "Upper middle income", "Lower middle income",
+                      "OECD members", "World", "European Union",
+                      "East Asia & Pacific", "Europe & Central Asia",
+                      "Latin America & Caribbean", "Middle East & North Africa",
+                      "North America", "South Asia", "Sub-Saharan Africa")) %>%
+  select(country, iso3c, gni_per_capita) %>%
+  distinct()
+```
+
+```{r}
+# load world bank data and find high income countries 
+wb_file_path <- "WorldBankData.csv"
+
+wb_data_raw <- read.csv(
+  wb_file_path, 
+  stringsAsFactors = FALSE,
+  check.names = FALSE  # keep original column names
+)
+
+# data has years as columns, need to find them
+year_cols <- grep("\\[YR\\d{4}\\]", names(wb_data_raw), value = TRUE)
+years <- as.numeric(gsub(".*\\[YR(\\d{4})\\]", "\\1", year_cols))
+
+# switch from wide to long format (easier to work with)
+wb_data_long <- wb_data_raw %>% 
+  select(`Country Name`, `Country Code`, `Series Name`, `Series Code`, all_of(year_cols)) %>%
+  pivot_longer(
+    cols = all_of(year_cols), 
+    names_to = "year_col", 
+    values_to = "value"
+  ) %>%
+  mutate(
+    year = as.numeric(gsub(".*\\[YR(\\d{4})\\]", "\\1", year_col)),
+    value = as.numeric(value)
+  ) %>%
+  select(-year_col) %>%
+  filter(!is.na(value))
+
+# make each indicator its own column
+wb_data <- wb_data_long %>%
+  select(-`Series Name`) %>%
+  pivot_wider(
+    names_from = `Series Code`,
+    values_from = value, 
+    id_cols = c(`Country Name`, `Country Code`, year)
+  ) %>%
+  rename(
+    country = `Country Name`,
+    iso3c = `Country Code`,
+    gni_per_capita = NY.GNP.PCAP.CD,
+    fertility_rate = SP.DYN.TFRT.IN, 
+    population_growth = SP.POP.GROW,
+    old_age_dependency = SP.POP.DPND.OL,
+    female_lfpr = SL.TLF.CACT.FE.ZS
+  )
+
+# world bank uses this threshold to classify high income
+gni_threshold <- 13205
+
+# get countries above threshold in 2023
+high_income_countries <- wb_data %>%
+  filter(year == max(year), !is.na(gni_per_capita)) %>%
+  filter(gni_per_capita >= gni_threshold) %>%
+  # skip regional aggregates
+  filter(!country %in% c("High income", "Low income", "Middle income", 
+                      "Upper middle income", "Lower middle income",
+                      "OECD members", "World", "European Union",
+                      "East Asia & Pacific", "Europe & Central Asia",
+                      "Latin America & Caribbean", "Middle East & North Africa",
+                      "North America", "South Asia", "Sub-Saharan Africa")) %>%
+  select(country, iso3c, gni_per_capita) %>%
+  distinct()
+```
+
+```{r}
+# load unicef data
+unicef_file_path <- "SOWC_tables.xlsx"
+
+# demographics from sheet 1
+demographics <- read_excel(
+  path = unicef_file_path, 
+  sheet = 1,
+  skip = 7,
+  n_max = 217,
+  col_names = c(
+    "country",
+    "population_2023_thousands_total", NA,
+    "population_2023_thousands_under18", NA,
+    "population_2023_thousands_under5", NA,
+    "annual_population_growth_rate_perc", NA,
+    "annual_population_growth_rate_perc_A", NA,
+    "annual_number_of_births_thousands_2023", NA,
+    "total_live_births_per_woman_2023", NA,
+    "life_expectancy_at_birth_1970", NA,
+    "life_expectancy_at_birth_2000", NA,
+    "life_expectancy_at_birth_2023", NA,
+    "dependency_ratio_total", NA,
+    "dependency_ratio_child", NA,
+    "dependency_ratio_old_age", NA,
+    "share_of_urban_population_perc_2023", NA,
+    "annual_growth_rate_of_urban_population_perc_2000-2020", NA,
+    "annual_growth_rate_of_urban_population_perc_2000-2020_A", NA,
+    "net_migration_rate_per_thousand_2023"
+  )
+) |>
+  select(-starts_with("...")) |>
+  filter(!is.na(country), country != "SUMMARY") |>
+  mutate(across(-country, as.numeric))
+
+# women's empowerment from sheet 17
+women_empowered <- read_excel(
+  path = unicef_file_path,
+  sheet = 17,
+  skip = 7,
+  n_max = 217,
+  col_names = c(
+    "country", 
+    "SIGI_2023",
+    "legal_gender_equality_in_employment_201802022",
+    "maternity_leave_benefits_2024",
+    "paternity_leave_benefits_2024",
+    "attained_upper_secondary_education_perc_2014-2023_male", NA,
+    "attained_upper_secondary_education_perc_2014-2023_female", NA,
+    "labour_force_participation_rate_2019-2023_rural_male", NA,
+    "labour_force_participation_rate_2019-2023_urban_male", NA,
+    "labour_force_participation_rate_2019-2023_male", NA,
+    "labour_force_participation_rate_2019-2023_rural_female", NA,
+    "labour_force_participation_rate_2019-2023_urban_female", NA,
+    "labour_force_participation_rate_2019-2023_female", NA,
+    "unemployment_rate_2019-2023_rural_male", NA,
+    "unemployment_rate_2019-2023_urban_male", NA,
+    "unemployment_rate_2019-2023_male", NA,
+    "unemployment_rate_2019-2023_rural_female", NA,
+    "unemployment_rate_2019-2023_urban_female", NA,
+    "unemployment_rate_2019-2023_female", NA,
+    "mobile_phone_ownership_perc_2014-2023_male", NA,
+    "mobile_phone_ownership_perc_2014-2023_female", NA,
+    "financial_inclusion_perc_2014-2022_male", 
+    "financial_inclusion_perc_2014-2022_female", 
+    "time_use_perc_2014-2023_male", 
+    "time_use_perc_2014-2023_female"
+  )
+) |>
+  select(-starts_with("...")) |>
+  filter(!is.na(country), country != "SUMMARY") |>
+  mutate(
+    across(
+      -c(country, maternity_leave_benefits_2024, paternity_leave_benefits_2024), 
+      as.numeric
+    )
+  )
+
+# social protection from sheet 13
+social_protection <- read_excel(
+  path = unicef_file_path,
+  sheet = 13,
+  skip = 7,
+  n_max = 217,
+  col_names = c(
+    "country", 
+    "new_mothers_cash_benefit_perc_2015-2023",
+    "children_covered_by_social_protection_perc_2015-2023", NA,
+    "social_protection_benefits_perc_2015-2021_bottom40", 
+    "social_protection_benefits_perc_2015-2021_top20", 
+    "social_protection_benefits_perc_2015-2021_bottom20", 
+    "share_of_household_income_2015-2023_bottom40",
+    "share_of_household_income_2015-2023_top20",
+    "share_of_household_income_2015-2023_bottom20",
+    "gini_coefficient_2015-2023", 
+    "palma_index_2015-2023", 
+    "VMIR_2010-2019",
+    "GDP_per_capita_2015-2023",
+    "children_material_deprivation_2011-2019_1D", NA,
+    "children_material_deprivation_2011-2019_2D", NA,
+    "children_material_deprivation_2011-2019_3D", NA,
+    "children_material_deprivation_2011-2019_more"
+  )
+) |>
+  select(-starts_with("...")) |>
+  filter(!is.na(country), country != "SUMMARY") |>
+  mutate(across(-country, as.numeric))
+
+# combine the unicef sheets
+unicef_combined <- demographics %>%
+  select(country, life_expectancy_at_birth_2023) %>%
+  left_join(
+    women_empowered %>% 
+      select(country, SIGI_2023, 
+            `attained_upper_secondary_education_perc_2014-2023_female`, 
+            `labour_force_participation_rate_2019-2023_female`,
+            `financial_inclusion_perc_2014-2022_female`, 
+            `time_use_perc_2014-2023_female`),
+    by = "country"
+  ) %>%
+  left_join(
+    social_protection %>%
+      select(country, `new_mothers_cash_benefit_perc_2015-2023`), 
+    by = "country"
+  )
+
+# add country codes for matching with world bank
+unicef_combined <- unicef_combined %>%
+  mutate(
+    iso3c = countrycode(
+      country, 
+      origin = "country.name", 
+      destination = "iso3c", 
+      warn = FALSE
+    )
+  )
+
+# keep only high income countries
+unicef_high_income <- unicef_combined %>%
+  inner_join(high_income_countries %>% select(iso3c), by = "iso3c")
+
+wb_high_income <- wb_data %>%
+  inner_join(high_income_countries %>% select(iso3c), by = "iso3c") %>% 
+  filter(year >= 2015 & year <= 2023) 
+
+# unicef data doesn't have years, so expand for all years 2015-2023
+years_available <- sort(unique(wb_high_income$year))
+
+unicef_panel <- expand.grid(
+  iso3c = unique(unicef_high_income$iso3c), 
+  year = years_available, 
+  stringsAsFactors = FALSE
+) %>%
+  left_join(unicef_high_income, by = "iso3c")
+
+# merge world bank and unicef data
+final_dataset <- wb_high_income %>%
+  inner_join(
+    unicef_panel,
+    by = c("iso3c", "year"),
+    suffix = c("_wb", "_unicef")
+  ) %>%
+  mutate(country = dplyr::coalesce(country_unicef, country_wb)) %>%
+  select(-country_wb, -country_unicef) %>%
+  mutate(
+    # shorter names for these variables
+    education_female = `attained_upper_secondary_education_perc_2014-2023_female`,
+    financial_inclusion_female = `financial_inclusion_perc_2014-2022_female`,
+    unpaid_work_share_female = `time_use_perc_2014-2023_female`,
+    labour_part_female = `labour_force_participation_rate_2019-2023_female`
+  ) %>%
+  select(
+    -`attained_upper_secondary_education_perc_2014-2023_female`, 
+    -`financial_inclusion_perc_2014-2022_female`,
+    -`time_use_perc_2014-2023_female`,
+    -`labour_force_participation_rate_2019-2023_female`
+  ) %>%
+  arrange(country, year) %>%
+  select(country, year, everything())
+
+```
+
+```{r}
+# add world bank women business and law data on parental leave
+wbl_file_path <- "wb_historical_panel_data.xlsx"
+
+wb_parenthood <- read_excel(
+  path = wbl_file_path,
+  sheet = "Parenthood", 
+  col_types = "text"
+) %>% 
+  filter(`Report Year` >= 2015 & `Report Year` <= 2023) %>%
+  select(
+    iso3c = `ISO Code`, 
+    year = `Report Year`,
+    mat_leave_14weeks = `Is paid leave of at least 14 weeks available to mothers?`,
+    mat_leave_length = `Length of paid maternity leave`,
+    pat_leave_available = `Is there paid leave available to fathers?`, 
+    pat_leave_length = `Length of paid paternity leave`, 
+    parental_leave = `Is there paid parental leave?`
+  ) %>%
+  mutate(
+    year = as.numeric(year), 
+    # convert yes/no to 1/0
+    mat_leave_14weeks = ifelse(mat_leave_14weeks == "Yes", 1, 0), 
+    pat_leave_available = ifelse(pat_leave_available == "Yes", 1, 0),
+    mat_leave_length = as.numeric(mat_leave_length), 
+    pat_leave_length = as.numeric(pat_leave_length)
+  )
+
+# add to main dataset
+final_dataset <- final_dataset %>%
+  left_join(wb_parenthood, by = c("iso3c", "year"))
+
+# save complete dataset
+write.csv(final_dataset, "final_empowerment_fertility_data.csv", row.names = FALSE)
+```
+
+```{r}
+# filter to top 30 richest countries and clean up names
+# (excluding Turks and Caicos and Andorra since they're not in World Bank data)
+final_dataset_30 <- final_dataset %>%
+  filter(year == 2023, !is.na(gni_per_capita)) %>%
+  filter(!country %in% c("Turks and Caicos Islands", "Andorra")) %>%
+  arrange(desc(gni_per_capita)) %>%
+  slice(1:30) %>%
+  select(country) %>%
+  # now get all years for these 30 countries
+  left_join(final_dataset, by = "country") %>%
+  # clean up country names
+  mutate(
+    country = case_when(
+      country == "Republic of Korea" ~ "South Korea",
+      country == "United States" ~ "U.S.",
+      country == "United Arab Emirates" ~ "UAE",
+      country == "Hong Kong SAR, China" ~ "Hong Kong",
+      country == "Macao SAR, China" ~ "Macao",
+      country == "Slovak Republic" ~ "Slovakia",
+      TRUE ~ country
+    )
+  )
+
+write.csv(final_dataset_30, "top30.csv", row.names = FALSE)
+
+```
+
+```{r}
+# classify countries by income level based on their 2023 GNI per capita
+# using world bank thresholds: High ($13,206+), Upper-Middle ($4,256-$13,205), 
+# Lower-Middle ($1,086-$4,255), Low (<$1,086)
+gni_classification <- wb_data %>%
+  filter(year == max(year, na.rm = TRUE)) %>% 
+  select(country, iso3c, gni_per_capita) %>%
+  drop_na(gni_per_capita) %>%
+  # skip regional aggregates (we want actual countries only)
+  filter(!country %in% c("High income", "Low income", "Middle income",
+                       "Upper middle income", "Lower middle income",
+                       "OECD members", "World", "European Union",
+                       "East Asia & Pacific", "Europe & Central Asia",
+                       "Latin America & Caribbean", "Middle East & North Africa",
+                       "North America", "South Asia", "Sub-Saharan Africa")) %>%
+  mutate(
+    income_level = case_when(
+      gni_per_capita >= 13206 ~ "High Income",
+      gni_per_capita >= 4256 & gni_per_capita <= 13205 ~ "Upper-Middle Income",
+      gni_per_capita >= 1086 & gni_per_capita <= 4255 ~ "Lower-Middle Income",
+      TRUE ~ "Low Income"
+    )
+  ) %>%
+  select(iso3c, income_level, gni_per_capita) %>%
+  distinct()
+
+
+# merge income classification with world bank data for 2015-2023
+# this will be used for both the bar chart and line chart
+plot_data <- wb_data %>%
+  filter(year >= 2015 & year <= 2023) %>%
+  left_join(gni_classification, by = "iso3c") %>%
+  drop_na(income_level, fertility_rate) %>%
+  mutate(
+    # make income_level a factor so bars appear in the right order
+    income_level = factor(income_level, levels = c("High Income", "Upper-Middle Income", "Lower-Middle Income", "Low Income"))
+  )
+
+```
+
+```{r, fig.align='center'}
+# first viz
+# interactive line chart showing fertility trends by income group
+
+# calculate average fertility for each income group per year
+# first group by year and income level, then find the mean fertility
+# also calculate how much fertility has changed since 2015 for each group
+avg_fertility_trend <- plot_data %>%
+  mutate(year = as.numeric(year)) %>%
+  group_by(year, income_level) %>%
+  summarize(avg_fertility = mean(fertility_rate, na.rm = TRUE), .groups = "drop") %>%
+  group_by(income_level) %>%
+  mutate(change_from_2015 = avg_fertility - avg_fertility[year == 2015]) %>%
+  ungroup()
+
+# set colors for each income group (dark blue for high income, light blue for low income)
+color_map <- c(
+  "High Income" = "#1e3a8a",      # dark blue
+  "Upper-Middle Income" = "#3b82f6",   # medium blue
+  "Lower-Middle Income" = "#93c5fd",   # light blue
+  "Low Income" = "#dbeafe"             # very light blue
+)
+# make the base ggplot with lines for each income group
+# the 'text' parameter creates the hover tooltip for plotly
+p2_detail <- ggplot(avg_fertility_trend, 
+                    aes(x = year, y = avg_fertility, color = income_level, group = income_level,
+                        text = paste0(
+                          "<b>Income Level:</b> ", income_level, "<br>",
+                          "<b>Year:</b> ", year, "<br>",
+                          "<b>Avg Fertility Rate:</b> ", round(avg_fertility, 2), "<br>",
+                          "<b>Change since 2015:</b> ",
+                          ifelse(change_from_2015 > 0, "+", ""), round(change_from_2015, 2)
+                        ))) +
+  geom_line(linewidth = 1, lineend = "round") +
+  scale_color_manual(values = color_map, name = "Income Level") +
+  scale_y_continuous(limits = c(0, 6), breaks = seq(0, 6, by = 2)) +
+  scale_x_continuous(breaks = seq(2015, 2023, by = 2)) +
+  labs(
+    title = "Fig.1 Average Fertility Rate Trends by Income Group (2015–2023)",
+    subtitle = "Global fertility decline visualized across World Bank income classifications",
+    x = "Year (2015–2023)",
+    y = "Average Fertility Rate\n (births per woman)"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5, size = 14),
+    plot.subtitle = element_text(color = "gray41", hjust = 0.5, size = 12, margin = margin(b = 10)),
+    axis.title.x = element_text(face = "bold", size = 10, lineheight = 1.1),
+    axis.title.y = element_text(face = "bold", size = 10),
+    axis.text.x = element_text(size = 11),
+    axis.text.y = element_text(size = 11),
+    legend.title = element_text(face = "bold", size = 11),
+    legend.text = element_text(face = "bold", size = 10),
+    legend.position = c(1.1, 0.82),
+    legend.justification = c("left", "center"),
+    panel.grid.minor = element_blank(),
+    plot.margin = margin(t = 60, r = 150, b = 180, l = 70)
+  )
+
+# convert the ggplot to an interactive plotly chart
+# this adds hover tooltips and lets users zoom/pan
+line_fig <- ggplotly(p2_detail, tooltip = "text") %>%
+  layout(
+    # adjust margins to fit title and footnotes
+    margin = list(t = 100, b = 200, l = 80, r = 10),
+    # set the main title
+    title = list(
+      text = "<b>Fig. 1 Average Fertility Rate Trends by Income Group (2015–2023)</b>",
+      font = list(size = 16),
+      x = 0.55,
+      xanchor = "center"
+    ),
+    # position the legend on the right side
+    legend = list(
+      title = list(text = "<b>Income Level</b>", font = list(size = 12)),
+      font = list(size = 12),
+      y = 0.82,
+      x = 1.1,
+      tracegroupgap = 4
+    ),
+    # add subtitle and footnotes as annotations
+    annotations = list(
+      # subtitle right below the title
+      list(
+        xref = "paper", yref = "paper",
+        x = 0.55, y = 1.05,
+        text = "<span style='color:gray'>Declining temporal fertility patterns aggregated by income-based country classifications</span>",
+        showarrow = FALSE,
+        xanchor = "center",
+        yanchor = "bottom",
+        font = list(size = 13, color = "gray41")
+      ),
+      # footnotes at the bottom explaining the data and sources
+      list(
+        xref = "paper", yref = "paper",
+        x = -0.05, y = -0.4,
+        text = paste(
+          "<span style='line-height:1.8; color:gray'>Each line denotes an income group, classified according to World Bank methodology, with income level taken as a proxy for development.</span><br>",
+          "<span style='line-height:1.8; color:gray'>Fertility rates are averaged within each income group to depict aggregate temporal trends.</span><br>",
+          "<span style='line-height:1.8; color:gray'>The chart reveals a marked global decline in fertility, with higher-income countries consistently exhibiting lower average rates.</span><br>",
+          "<span style='color:gray'>Data Source: World Bank World Development Indicators (WDI) & UNICEF SOWC 2024</span>",
+          sep = ""
+        ),
+        showarrow = FALSE,
+        xanchor = "left",
+        yanchor = "top",
+        align = "left",
+        font = list(size = 10, color = "gray41")
+      )
+    )
+  )
+
+# display the interactive chart
+htmltools::tags$div(
+  style = "width:70%; margin: 0 auto 30px auto;",
+  plotly::config(
+    line_fig %>% layout(
+      height = 400,
+      width = 900,    # <-- increase width
+      margin = list(l = 20, r = 20, t = 80, b = 135)
+    ),
+    responsive = FALSE
+  )
+)
+
+
+```
+# A Quiet Crisis Born from Progress
+
+Across the developed world, prosperity has taken on a paradoxical edge. In cities from Seoul to Stockholm, the same forces that have lifted women’s economic agency are quietly reshaping population structures. Fertility rates have fallen to historic lows, and what once symbolized social progress: rising education, greater workforce participation, and expanded autonomy now intersects with a demographic downturn no country has yet reversed.
+Between 2015 and 2023, fertility declined across every income tier but nowhere more dramatically than among the world’s richest countries. High-income economies now average around 1.5 births per woman, well below the replacement level of 2.1, while low-income countries remain above 4.5 as shown in Figure 1. The linear trends reveal an unmistakable downward slope, showing that prosperity itself has become the best predictor of demographic contraction.
+This transformation reflects not simply cultural change but a re-ordering of how modern societies balance opportunity, work, and family. As Kabeer (2012) notes, women’s empowerment, which represents the capacity to access resources and make autonomous life decisions, is inseparable from economic development. Yet empowerment, when unsupported by institutional mechanisms like childcare and flexible work, can make family formation harder. Our decade-long lens captures the aftermath of the post-recession recovery and the pre-COVID digital boom, where women’s opportunities expanded faster than institutions adapted to them. This tension between empowerment and structure sets the stage for the inequalities that follow.
+
+```{r, warning=FALSE, message=FALSE, fig.align='center'}
+# second viz
+# interactive bar chart showing average fertility by income group in 2023
+
+# calculate average fertility for each income group in 2023
+bar_data_2023 <- plot_data %>%
+  filter(year == 2023) %>%
+  drop_na(fertility_rate) %>%
+  group_by(income_level) %>%
+  summarize(
+    avg_fertility = mean(fertility_rate, na.rm = TRUE),
+    country_count = n(),
+    .groups = 'drop'
+  ) %>%
+  mutate(
+    # keep income levels in order from high to low GNI
+    income_level = factor(income_level, 
+                          levels = c("High Income", "Upper-Middle Income", "Lower-Middle Income", "Low Income")),
+    # create shorter labels for x-axis (with line breaks)
+    short_label = case_when(
+      income_level == "Upper-Middle Income" ~ "Upper-Middle\nIncome",
+      income_level == "Lower-Middle Income" ~ "Lower-Middle\nIncome",
+      TRUE ~ as.character(income_level)
+    ),
+    # make sure the short labels stay in the right order
+    short_label = factor(short_label, levels = short_label[order(income_level)])
+  ) %>%
+  arrange(income_level)
+
+# set colors for each income group (dark blue for high income, light blue for low income)
+color_map <- c(
+  "High Income" = "#1e3a8a",      # dark blue (matches your other charts)
+  "Upper-Middle Income" = "#3b82f6",   # medium blue
+  "Lower-Middle Income" = "#93c5fd",   # light blue
+  "Low Income" = "#dbeafe"             # very light blue
+)
+# order colors to match the factor levels
+color_palette_ordered <- color_map[levels(bar_data_2023$income_level)]
+
+# create shared data objects for linking between bar chart and line chart
+# (clicking a bar will highlight that income group in the line chart)
+shared_detail <- SharedData$new(plot_data, key = ~iso3c, group = "income_group_link")
+shared_summary_2023 <- SharedData$new(bar_data_2023, key = ~income_level, group = "income_group_link")
+
+# add horizontal line for replacement level fertility (2.1)
+replacement_level <- 2.1
+replacement_label_pos <- replacement_level + 0.05
+
+# make the bar chart
+p1_bar <- ggplot(shared_summary_2023, aes(x = short_label, y = avg_fertility, fill = income_level)) +
+  # add dotted line at replacement level
+  geom_hline(yintercept = replacement_level, linetype = "dotted", color = "black", linewidth = 1) +
+  # create bars with red borders
+  geom_col(width = 0.8, color = "#1e3a8a") +
+  # add fertility values on top of bars
+  geom_text(aes(label = round(avg_fertility, 2)),
+          position = position_nudge(y = 0.3),
+          size = 4, fontface = "bold") +
+  scale_fill_manual(values = color_palette_ordered) +
+  labs(
+    title = "Fig. 2 Average Fertility Rate by Income Group (2023)",
+    subtitle = "Click a bar to view individual country trends on the chart below.",
+    x = "Income Groups",
+    y = "Average Fertility Rate\n(births per woman)"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(face = "bold", color = "black", hjust = 0.5, size = 13),
+    plot.subtitle = element_text(face = "bold", color = "black", hjust = 0.5, size = 11),
+    axis.title.x = element_text(face = "bold", color = "black", size = 10),
+    axis.title.y = element_text(face = "bold", color = "black", size = 10),
+    axis.text = element_text(color = "black"),
+    legend.position = "none"
+  )
+
+# convert to interactive plotly chart with click functionality
+bar_fig <- ggplotly(p1_bar, tooltip = c("income_level", "avg_fertility")) %>%
+  highlight(
+    on = "plotly_click",
+    selectize = FALSE,
+    dynamic = TRUE,
+    opacity = 1
+  ) %>%
+  layout(
+    # adjust margins to fit footnotes at the bottom
+    margin = list(t = 50, b = 195, l = 60, r = 40),
+    annotations = list(
+      # label for the replacement level line
+      list(
+        xref = "paper", yref = "y",
+        x = 0.95, y = replacement_label_pos,
+        text = "Replacement level fertility",
+        showarrow = FALSE,
+        xanchor = "right", yanchor = "bottom",
+        font = list(size = 12, color = "gray41")
+      ),
+      # footnote explaining income groups
+      list(
+        xref = "paper", yref = "paper",
+        x = 0, y = -0.40,
+        text = "Income groups based on 2023 GNI thresholds.",
+        showarrow = FALSE,
+        xanchor = "left", yanchor = "top",
+        font = list(size = 10, color = "gray41")
+      ),
+      # footnote explaining replacement level
+      list(
+        xref = "paper", yref = "paper",
+        x = 0, y = -0.47,
+        text = "Replacement-level fertility, the average number of children per woman needed to maintain a stable population is 2.1 live births.",
+        showarrow = FALSE,
+        xanchor = "left", yanchor = "top",
+        font = list(size = 10, color = "gray41")
+      ),
+      # data source
+      list(
+        xref = "paper", yref = "paper",
+        x = 0, y = -0.54,
+        text = "Data Source: UNICEF SOWC 2024",
+        showarrow = FALSE,
+        xanchor = "left", yanchor = "top",
+        font = list(size = 10, color = "gray41")
+      )
+    )
+  )
+
+# display the interactive bar chart
+
+htmltools::tags$div(
+  style = "width:70%; text-align:center; margin: 0 auto 30px auto;",
+  plotly::config(
+    bar_fig %>% layout(height = 450),
+    responsive = FALSE
+  )
+)
+
+
+
+```
+
+# The Unequal Geography of Decline
+
+By 2023, fertility patterns revealed an unmistakable gradient (Figure 2): the richer the country, the fewer the births. The bar chart’s distribution confirms that high-income nations cluster below replacement, while low-income economies remain demographically vibrant. This split represents not only divergent lifestyles but diverging futures, aging labor forces on one end, expanding youth populations on the other.
+This divergence reflects what Upadhyay et al. (2014) term the **empowerment–fertility paradox**: as women gain greater control over education, income, and family planning, fertility tends to decline. Yet the paradox lies not in empowerment itself, but because institutions fail to adapt. Without affordable childcare, shared parental leave, or career re-entry programs, women face what Kabeer (2012) calls the **double burden**: the expectation to excel at work while carrying the majority of domestic responsibilities. Where policies lag, progress becomes self-limiting.
+Countries like Japan and South Korea exemplify this disconnect. Their fertility rates, 1.3 and 0.72 respectively, reflect societies where women are more educated and employed than ever before but where long work hours and rigid career norms make motherhood professionally costly. These nations demonstrate that empowerment, when isolated from supportive policy, does not necessarily translate into sustainable family life.
+At the other end of the spectrum, lower-middle-income nations, averaging 3.31 births per woman, remain in earlier stages of demographic transition. As more women there enter the labor force and gain financial independence, the patterns we now see in richer countries are likely to repeat unless institutional infrastructures evolve alongside empowerment.
+This realization naturally questions how empowerment, in its different dimensions interacts with fertility outcomes across nations.
+
+```{r trajectory_plot, fig.width=9, fig.height=10, fig.align='center'}
+# third viz
+# static scatterplot showing empowerment metrics vs fertility trajectories
+
+# filter to only the top 30 richest countries
+scatter_data_filtered <- final_dataset_30 %>%
+  select(
+    country, year, fertility_rate, 
+    education_female, labour_part_female, 
+    financial_inclusion_female, unpaid_work_share_female
+  ) %>%
+  drop_na(fertility_rate)
+
+# reshape data for faceted plotting (one panel per empowerment metric)
+scatter_data_long_filtered <- scatter_data_filtered %>%
+  filter(if_any(c(education_female, labour_part_female, financial_inclusion_female, unpaid_work_share_female), ~ !is.na(.))) %>%
+  pivot_longer(
+    cols = c(education_female, labour_part_female, financial_inclusion_female, unpaid_work_share_female),
+    names_to = "Metric",
+    values_to = "Value"
+  ) %>%
+  drop_na(Value) %>%
+  mutate(
+    Metric_Label = case_when(
+      Metric == "education_female" ~ "Female Education Attainment (%)",
+      Metric == "labour_part_female" ~ "Female Labour Force Participation Rate (%)",
+      Metric == "financial_inclusion_female" ~ "Female Financial Inclusion (%)",
+      Metric == "unpaid_work_share_female" ~ "Unpaid Work Share (Time Use %)"
+    )
+  )
+
+# Prepare data for start and end points
+data_2023 <- scatter_data_long_filtered %>% filter(year == 2023)
+data_2015 <- scatter_data_long_filtered %>% filter(year == 2015)
+
+# Create the trajectory plot
+p_trajectory_top30 <- ggplot(scatter_data_long_filtered, 
+                              aes(x = Value, y = fertility_rate, group = country)) +
+  geom_path(alpha = 0.6, linewidth = 0.5, color = "#1e3a8a") +
+  geom_smooth(aes(group = 1), method = "lm", se = FALSE, color = "black",
+              linewidth = 1, linetype = "dashed") +
+  facet_wrap(~ Metric_Label, scales = "free_x", ncol = 2) +
+  labs(
+    title = "Fig. 3 Fertility Trajectories vs. Female Empowerment Metrics (2015–2023)",
+    subtitle = "Analysis of the Top 30 Richest High Income Countries by 2023 GNI per Capita.",
+    x = "Empowerment Metric Value (%)",
+    y = "Total Fertility Rate (births per woman)",
+    caption = paste(
+      "Each panel depicts fertility rates against a distinct female empowerment metric for the top 30 high-income countries (2015–2023).\n",
+      "Blue lines trace each country's fertility change from 2015 to 2023.\n",
+      "The dashed black line shows the overall linear trend across countries.\n",
+      "Female education shows little link to declining fertility, suggesting limited correlation.\n",
+      "Negative trends for other metrics indicate that greater economic engagement and time burdens align with lower fertility.\n",
+      "Data Source: World Bank WDI & UNICEF SOWC 2024."
+    )
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5, size = 13),
+    plot.subtitle = element_text(hjust = 0.5, color = "gray41", size = 11),
+    axis.title.x = element_text(face = "bold", color = "black", size = 10),
+    axis.title.y = element_text(face = "bold", color = "black", size = 10),
+    axis.text = element_text(color = "black"),
+    legend.position = "bottom",
+    legend.title = element_text(face = "bold", size = 9.5),
+    strip.text = element_text(face = "bold", hjust = 0.5),
+    panel.spacing = unit(1.15, "lines"),
+    plot.caption = element_text(
+      hjust = 0, color = "gray41", size = 7,
+      lineheight = 1.25, margin = margin(t = 20)
+    )
+  )
+
+# Add points for 2023 and 2015
+if(nrow(data_2023) > 0) {
+  p_trajectory_top30 <- p_trajectory_top30 + 
+    geom_point(data = data_2023, aes(shape = "2023 (Latest)"), 
+               size = 3.2, color = "#1e3a8a")
+}
+
+if(nrow(data_2015) > 0) {
+  p_trajectory_top30 <- p_trajectory_top30 + 
+    geom_point(data = data_2015, aes(shape = "2015 (Start)"), 
+               size = 3.2, color = "#1e3a8a")
+}
+
+# Add shape scale
+if(nrow(data_2023) > 0 || nrow(data_2015) > 0) {
+  p_trajectory_top30 <- p_trajectory_top30 +
+    scale_shape_manual(name = "Time Point", 
+                       values = c("2023 (Latest)" = 19, "2015 (Start)" = 1))
+}
+
+# Display the plot
+print(p_trajectory_top30)
+```
+
+# Empowerment's Blind Spot: What Missing Data Reveals
+
+
+The relationship between women’s empowerment and fertility becomes more complex when we examine the data behind it. Across the world’s 30 wealthiest nations, rising education, labor participation, unpaid domestic work and financial inclusion, consistent patterns emerge.
+Education, long considered the cornerstone of empowerment, shows a surprisingly weak link to declining fertility. High levels of female educational attainment coexist with fertility rates ranging between 1.0 and 2.0 births per woman, suggesting that once education is near universal, its marginal effect on fertility stabilizes. In contrast, economic empowerment metrics, particularly financial inclusion and labor force participation exhibit stronger negative relationships with fertility. Countries with greater female financial independence and full-time employment tend to show sharper fertility declines between 2015 and 2023.
+Yet the most revealing signal came from unpaid work. In countries where women shoulder a higher share of domestic and caregiving duties, fertility remained persistently low despite prosperity. This suggests that empowerment’s benefits in the labor market can be offset by **time poverty** at home (women have so much unpaid household and caregiving work that they lack the discretionary time needed to balance employment and family, limiting their ability to have more children), a dynamic invisible in most economic data. 
+Here lies a methodological limitation we encountered directly. Even in high-income contexts, official datasets fail to capture unpaid care labor comprehensively. Time-use statistics are incomplete, and “financial inclusion” is inconsistently defined across sources. Our scatter analysis therefore approximates empowerment through measurable proxies, acknowledging that qualitative dimensions , cultural norms, workplace flexibility, or family expectations remain unquantified.
+This limitation underscores the need for a critical stance toward our own data. As Upadhyay et al. (2014) argue, the absence of information about care work is itself evidence of inequality: what societies neglect to measure, they often undervalue. While our analysis captures strong macro-patterns, it cannot isolate causation, empowerment and fertility move together, but the direction of influence may vary across contexts.
+Recognizing these blind spots, we turned to another dimension, the design of parental support systems to test whether institutional structures could counterbalance these demographic pressures.
+
+
+```{r heatmap, echo=FALSE, fig.width=12, fig.height=17, dpi=300, warning=FALSE, message=FALSE}
+# filter to 2023 only for heatmap
+maternal_support_2023 <- final_dataset_30 %>%
+  filter(year == 2023) %>%
+  select(
+    country, gni_per_capita, fertility_rate,
+    mat_leave_length, pat_leave_length,
+    `new_mothers_cash_benefit_perc_2015-2023`
+  )
+
+# reshape for heatmap
+heatmap_long <- maternal_support_2023 %>%
+  pivot_longer(
+    cols = c(mat_leave_length, pat_leave_length, 
+             `new_mothers_cash_benefit_perc_2015-2023`),
+    names_to = "support_metric",
+    values_to = "value"
+  ) %>%
+  mutate(
+    metric_label = case_when(
+      support_metric == "mat_leave_length" ~ "Maternity\nLeave (weeks)",
+      support_metric == "pat_leave_length" ~ "Paternity\nLeave (weeks)",
+      support_metric == "new_mothers_cash_benefit_perc_2015-2023" ~ 
+        "Cash Benefits\nCoverage (%)"
+    ),
+    display_text = case_when(
+      support_metric %in% c("mat_leave_length", "pat_leave_length") ~ 
+        ifelse(is.na(value), "N/A", paste0(round(value), "w")),
+      support_metric == "new_mothers_cash_benefit_perc_2015-2023" ~ 
+        ifelse(is.na(value), "N/A", paste0(round(value, 1), "%"))
+    ),
+    normalized_color = case_when(
+      support_metric %in% c("mat_leave_length", "pat_leave_length") ~ 
+        pmin(value / 2.5, 100),
+      support_metric == "new_mothers_cash_benefit_perc_2015-2023" ~ value
+    )
+  )
+
+# make the plot with much larger text everywhere
+heatmap_plot <- ggplot(
+  heatmap_long,
+  aes(x = metric_label, y = reorder(country, gni_per_capita), 
+      fill = normalized_color)
+) +
+  geom_tile(color = "white", linewidth = 2) +  # Thicker borders
+  scale_fill_gradient2(
+  low = "#f0f4ff", high = "#1e3a8a", na.value = "grey85",
+  name = "Support Level\n(Grey = Missing Data)",
+  breaks = c(0, 25, 50, 75, 100),
+  labels = c("0%", "25%", "50%", "75%", "100%")
+) +
+  geom_text(
+    aes(label = display_text, 
+        color = ifelse(normalized_color > 50, "white", "black")),
+    size = 4,  # Much bigger cell text
+    fontface = "bold",
+    show.legend = FALSE
+  ) +
+  scale_color_identity() +  
+  labs(
+    title = "Fig.4 Maternal Support Policies in Developed Economies (2023)",
+    subtitle = "Leave duration and financial assistance to new mothers",
+    x = NULL, y = NULL,
+    caption = paste0(
+      "Countries sorted by GNI per capita (highest to lowest) | ",
+      "Leave: weeks of paid leave | Cash benefits: % of new mothers receiving financial support (2015-2023 avg)\n",
+      "Color scale: Both leave types use same 0-250 week scale for comparability | ",
+      "Source: World Bank, UNICEF SOWC 2024, World Bank Women Business & Law"
+    )
+  ) +
+  theme_minimal(base_size = 12) +  # Much bigger base size
+  theme( 
+    plot.title = element_text(size = 13, face = "bold", hjust = 0.5, margin = margin(b = 10)), #28
+    plot.subtitle = element_text(size = 11, color = "grey30", hjust = 0.5, margin = margin(b = 25)), #20
+    plot.caption = element_text(size = 10, color = "grey50", hjust = 0, #14
+                               lineheight = 1.5, margin = margin(t = 25, l= -45)),
+
+    axis.text.x = element_text(size = 10, lineheight = 1.1, face = "bold"), #18
+    axis.text.y = element_text(size = 10, face = "bold"),#16
+    panel.grid = element_blank(),
+    legend.position = "right",
+    legend.title = element_text(size = 10, face = "bold"), #16
+    legend.text = element_text(size = 9), #15
+    legend.key.height = unit(3, "cm"),
+    legend.key.width = unit(1, "cm"),
+  )
+
+heatmap_plot
+```
+
+
+# Policy Promises and Contradictions
+
+Comparing parental leave and maternal support across wealthy nations revealed an intricate paradox of policy and practice. Some countries prioritize cash benefits for all mothers, others employment-based paid leave for working parents. For women navigating modern labor markets, the difference determines whether motherhood feels like a temporary adjustment or a permanent setback.
+
+The United States, for example, reports zero weeks of paid federal maternity leave. Japan and South Korea offer paid leave within formal employment but provide little to women outside it. Nordic nations like Sweden, Finland, and Norway, often cited as models, appear moderate in raw data but in fact provide extensive gender-neutral shared leave. Sweden’s 300 shared days and Norway’s combined 343 reflect a shift toward egalitarian caregiving.
+
+Yet even with these policies, fertility continues to fall, Sweden’s rate reached 1.45 in 2023 (Macrotrends, 2025). This contradiction reveals the limits of policy alone. As living costs rise and social norms delay childbearing, even progressive welfare states struggle to sustain fertility. The correlation between empowerment and low fertility therefore cannot be offset by cash transfers or leave duration alone; it hinges on deeper cultural and economic reforms.
+
+Still, this policy lens clarified an important alternative explanation: where gender equality policies focus on fairness at work but not flexibility in life, empowerment can improve equity yet worsen demographic imbalance.
+
+```{r aging_plot, echo=FALSE, fig.width=12, fig.height=10, dpi=300, warning=FALSE, message=FALSE}
+# calculate changes from 2015 to 2023
+changes_data <- final_dataset_30 %>%
+  filter(year %in% c(2015, 2023)) %>%
+  select(country, year, old_age_dependency, fertility_rate) %>%
+  filter(!is.na(old_age_dependency) & !is.na(fertility_rate)) %>%
+  pivot_wider(
+    names_from = year,
+    values_from = c(old_age_dependency, fertility_rate)
+  ) %>%
+  mutate(
+    aging_increase = `old_age_dependency_2023` - `old_age_dependency_2015`,
+    fertility_decline = `fertility_rate_2023` - `fertility_rate_2015`,
+    hover_text = paste0(
+      "<b>", country, "</b><br>",
+      "Fertility decline: ", round(fertility_decline, 2), "<br>",
+      "Aging increase: ", round(aging_increase, 2), "<br>",
+      "Current old-age dependency: ", round(`old_age_dependency_2023`, 1)
+    )
+  ) %>%
+  filter(!is.na(fertility_decline) & !is.na(aging_increase))
+
+# calculate linear regression manually for the trend line
+lm_model <- lm(aging_increase ~ fertility_decline, data = changes_data)
+changes_data <- changes_data %>%
+  mutate(predicted = predict(lm_model))
+
+# make the base ggplot
+aging_plot <- ggplot(changes_data, 
+                     aes(x = fertility_decline, y = aging_increase)) +
+  geom_vline(xintercept = 0, linetype = "dashed", 
+             color = "gray60", linewidth = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", 
+             color = "gray60", linewidth = 0.5) +
+  
+  # Add manual trend line
+  geom_line(aes(y = predicted), 
+            color = "#1e3a8a", linewidth = 1.2, linetype = "dashed") +
+  
+  # Add points with MEDIUM sizes
+  geom_point(aes(fill = `old_age_dependency_2023`,
+                 text = hover_text),
+             shape = 21, color = "white", stroke = 0.5, alpha = 0.85, size = 10) +
+  
+  scale_fill_gradient(
+    low = "#dbeafe", high = "#1e3a8a",
+    name = "Current Old-Age\nDependency (2023)",
+    breaks = c(10, 20, 30, 40, 50)
+  ) +
+  scale_x_continuous(breaks = seq(-0.6, 0.1, 0.1),
+                     labels = function(x) sprintf("%.1f", x)) +
+  scale_y_continuous(breaks = seq(0, 10, 2),
+                     expand = expansion(mult = c(0.05, 0.15))) +
+  labs(
+    x = "Change in Fertility Rate (births per woman) — Larger decline <-",
+    y = paste0("Change in Old-Age Dependency Ratio\n",
+              "(people 65+ per 100 working-age adults)")
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    axis.title = element_text(face = "bold", size = 10),
+    axis.title.x = element_text(margin = margin(t = 9), size= 10),
+    axis.title.y = element_text(margin = margin(r = 15), size = 10),
+    axis.text = element_text(size = 11),
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_line(color = "gray90", linewidth = 0.3),
+    legend.position = "right",
+    legend.title = element_text(face = "bold", size = 10, lineheight = 1.2),
+    legend.text = element_text(size = 9)
+  )
+
+# convert to plotly with FIXED but reasonable width
+aging_fig <- ggplotly(aging_plot, tooltip = "text", 
+                      width = 1100, height = 700) %>%
+  layout(
+    margin = list(t = 180, b = 250, l = 100, r = 150),
+    
+    title = list(
+      text = "<b>Fig.5 Declining Fertility Accelerates Population Aging</b>",
+      font = list(size = 15),
+      x = 0.45,
+      xanchor = "center",
+      y = 1.10
+    ),
+    
+    legend = list(
+      title = list(text = "<b>Current Old-Age<br>Dependency (2023)</b>", 
+                   font = list(size = 12)),
+      font = list(size = 10),
+      y = 0.5,
+      x = 1.02
+    ),
+
+    annotations = list(
+      # Subtitle
+      list(
+        xref = "paper", yref = "paper",
+        x = 0.5, y = 1.02,
+        text = "<span style='color:gray'>Change in fertility rate vs. change in old-age dependency across 30 wealthy nations (2015-2023)</span>",
+        showarrow = FALSE,
+        xanchor = "center",
+        yanchor = "bottom",
+        font = list(size = 11, color = "gray41")
+      ),
+      
+      # Footnotes
+      list(
+        xref = "paper", yref = "paper",
+        x = 0, y = -0.20,
+        text = paste(
+          "<span style='line-height:1.8; color:gray'>Each circle represents one country among the 30 wealthiest by GNI per capita. Circle darkness show current aging severity.</span><br>",
+          "<span style='line-height:1.8; color:gray'>South Korea experienced the worst combination: fertility dropped by 0.52 while old-age dependency surged by 8.3 points.</span><br>",
+          "<span style='line-height:1.8; color:gray'>The trend line shows a clear pattern, countries with larger fertility declines experienced faster population aging.</span><br>",
+          "<span style='color:gray'>Data Source: World Bank & UNICEF SOWC 2024</span>",
+          sep = ""
+        ),
+        showarrow = FALSE,
+        xanchor = "left",
+        yanchor = "top",
+        align = "left",
+        font = list(size = 10, color = "gray50")
+      )
+    )
+  )
+
+
+htmltools::tags$div(
+  style = "width:70%; display:block; margin: 0 auto -50px auto; text-align:center;",
+  plotly::config(
+    aging_fig %>% layout(
+      height = 550,
+      width = 950,
+      margin = list(t = 60, b = 125, l = 40, r = 70)   # also reduced bottom margin
+    ),
+    responsive = FALSE
+  )
+)
+
+
+```
+
+# Aging into Imbalance
+
+The demographic outcome of these forces is visible in the numbers (Figure 5). Between 2015 and 2023, the thirty richest countries faced simultaneous fertility collapse and aging acceleration. Our analysis shows that nations with the steepest fertility declines also registered the fastest growth in old-age dependency ratios — the number of older adults per 100 working-age people.
+South Korea stands out: fertility dropped by 0.52, while the dependency ratio surged by 8.26 points, the largest among peers. Japan, already aging rapidly, reached 50.3 elderly per 100 workers, with fertility falling another 0.25. Similar trajectories appear in Finland, Canada, and Singapore.
+Multiple factors intersect here. OECD (2024) data confirm that women across advanced economies are delaying childbirth as higher education and dual-career norms become the default. The **motherhood penalty** (Correll et al., 2007) compounds this pattern: mothers face wage losses, promotion gaps, and reduced re-entry prospects, while fathers often receive wage premiums. Our findings echo this imbalance where gender equality is achieved only within the workplace, demographic equality falters outside it.
+Gulf states such as Saudi Arabia still sustain larger families through traditional norms and immigration, but as female education and employment expand, similar demographic transitions are likely. The mathematics of aging remain unforgiving: when births decline and lifespans extend, the demographic balance tilts irreversibly toward dependency unless societies adapt both economically and culturally.
+We also recognize the methodological limits of our temporal window. The 2015–2023 period captures post-recession and pandemic-era dynamics but cannot fully reflect long-term policy lag effects. Future analysis could extend to pre-2000 data or incorporate micro-level household surveys to strengthen causal inference.
+
+# Redesigning Prosperity for the Next Generation
+
+Our findings trace a complex but consistent story: women’s empowerment and fertility are intertwined through structures that have not evolved at the same pace. Economic equality has advanced faster than social adaptation, producing a paradox where autonomy expands even as family formation declines.
+Addressing this does not mean reversing empowerment; it means completing it. Countries must reconceive prosperity around care, not competition, valuing the unpaid labor that sustains both economies and families. Incorporating care work into national accounts, as Kabeer (2012) proposes, would render women’s invisible contributions measurable and actionable.
+Universal childcare and flexible work arrangements could relieve time constraints shown in our unpaid-work data, while inclusive parental leave that extends to informal and self-employed workers would bridge the gaps evident in our policy comparison. Economic incentives should accompany cultural ones, normalizing paternal caregiving and reducing the motherhood penalty that deters childbearing.
+Ultimately, empowerment’s success should be judged not only by women’s access to opportunity but by society’s capacity to make that opportunity compatible with sustainability. The demographic future of prosperity depends on whether nations can turn empowerment from an individual achievement into a collective equilibrium, one where equality and continuity thrive together.
+
+
+# Sources (APA 7th Edition)
+
+Correll, Shelley J., Benard, S., & Paik, I. (2007). Getting a Job: Is There a Motherhood Penalty? American Journal of Sociology, 112(5), 1297–1339. <https://doi.org/10.1086/511799> 
+
+Kabeer, N. (2012). Women’s economic empowerment and inclusive growth: labour markets and enterprise development. <https://www.womenindisplacement.org/sites/g/files/tmzbdl1471/files/2020-10/Womens%20Economic%20Empowerment%20and%20Inclusive%20Growth.pdf> 
+
+Macrotrends. (2025). Sweden Fertility Rate \| Historical Data \| Chart \| 1950-2025. Macrotrends.net. <https://www.macrotrends.net/datasets/global-metrics/countries/swe/sweden/fertility-rate> 
+
+Mammen, K., & Paxson, C. (2000). Women’s Work and Economic Development. The Journal of Economic Perspectives, 14(4), 141–164. <https://www.jstor.org/stable/2647079> 
+
+OECD. (2024). OECD Family Database - OECD. Www.oecd.org. <https://www.oecd.org/els/family/database.htm> 
+
+Upadhyay, U. D., Gipson, J. D., Withers, M., Lewis, S., Ciaraldi, E. J., Fraser, A., Huchko, M. J., & Prata, N. (2014). Women’s empowerment and fertility: A review of the literature. Social Science & Medicine, 115, 111–120. <https://doi.org/10.1016/j.socscimed.2014.06.014> 
+
+World Bank Open Data. (2024). World Bank Open Data. <https://data.worldbank.org/indicator/SP.DYN.TFRT.IN?locations=S>
+

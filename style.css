@@ -1,0 +1,101 @@
+/* Article styling */
+/* Make TOC wider and more visually appealing */
+.tocify {
+  width: 20% !important;  /* Reduced from 25% */
+  max-width: 280px !important;  /* Reduced from 350px */
+  border: 2px solid #1e3a8a !important;
+  border-radius: 8px !important;
+  background-color: #f8fafc !important;
+  padding: 15px !important;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1) !important;
+  margin-top: 20px !important;
+}
+
+/* Style the TOC title */
+.tocify-header {
+  font-size: 15px !important;
+  font-weight: bold !important;
+  color: #1e3a8a !important;
+  margin-bottom: 10px !important;
+}
+
+/* Style TOC items */
+.tocify-item {
+  font-size: 13px !important;
+  padding: 6px 8px !important;
+  margin: 2px 0 !important;
+  transition: all 0.2s ease !important;
+}
+
+/* Hover effect on TOC items */
+.tocify-item:hover {
+  background-color: #dbeafe !important;
+  border-radius: 4px !important;
+  transform: translateX(3px) !important;
+}
+
+/* Active/selected TOC item */
+.tocify .tocify-item.active {
+  background-color: #1e3a8a !important;
+  color: white !important;
+  border-radius: 4px !important;
+  font-weight: bold !important;
+}
+
+/* Sub-items styling */
+.tocify-subheader {
+  font-size: 12px !important;
+  padding-left: 12px !important;
+}
+
+.tocify-subheader .tocify-item {
+  padding: 5px 8px !important;
+}
+
+/* FIX: Adjust main content to NOT overlap with TOC */
+.col-md-9 {
+  margin-left: 0 !important;  /* Reset the margin */
+  width: 75% !important;  /* Make content area narrower */
+  float: right !important;  /* Push content to the right */
+}
+
+/* Ensure TOC stays on the left */
+.col-md-3 {
+  width: 22% !important;
+  float: left !important;
+}
+
+/* Add some polish to the overall document */
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
+  line-height: 1.7 !important;
+}
+
+h1, h2, h3 {
+  color: #1e3a8a !important;
+  margin-top: 30px !important;
+  margin-bottom: 15px !important;
+}
+
+/* Ensure proper spacing in main content */
+.main-container {
+  max-width: none !important;
+  padding-left: 0 !important;
+}
+/* Prevent floating TOC from overlapping centered plotly charts */
+/* --- FIX FOR INTERACTIVE PLOTLY VISUALIZATIONS --- */
+
+/* Center the Plotly widget */
+.html-widget {
+  display: block !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+/* Prevent Plotly charts from overlapping following text */
+.html-widget {
+  margin-bottom: 60px !important;
+}
+
+
+
