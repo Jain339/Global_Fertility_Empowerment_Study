@@ -5,20 +5,6 @@
 
 ---
 
-# **Table of Contents**
-
-* [Project Overview](#project-overview)
-* [Research Motivation](#research-motivation)
-* [Data Sources](#data-sources)
-* [Analytical Methods](#analytical-methods)
-* [Key Empirical Findings](#key-empirical-findings)
-* [Repository Structure](#repository-structure)
-* [Reproducibility Guide](#reproducibility-guide)
-* [Generative AI Statement](#generative-ai-statement)
-* [Citations](#citations)
-
----
-
 ## **Project Overview**
 
 This research project examines how multiple dimensions of women’s empowerment: economic, educational, and sociocultural—interact with fertility decline and population aging across the 30 wealthiest economies globally. Using a merged panel dataset from **UNICEF’s State of the World’s Children (SOWC) 2024** and the **World Bank World Development Indicators (WDI)**, the project conducts a multi-indicator quantitative analysis that integrates:
