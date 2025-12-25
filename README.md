@@ -1,8 +1,5 @@
 # **Empowered, Yet Shrinking: How Women’s Economic Gains Are Rewriting the Demographics of Prosperity**
 
-**Authors:** Nikita Jain & Kelsang Tsomo, 
-**Date:** October 2025
-
 ---
 
 ## **Project Overview**
